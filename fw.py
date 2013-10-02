@@ -2,6 +2,7 @@ from celery import Celery, task
 import subprocess
 import re
 import socket
+from ovs import Switch
 
 IRC_CHANNEL = '/home/cloud/irc/irc.atw.hu/#ik/in'
 DHCP_LOGFILE = '/home/cloud/dhcp.log'
@@ -11,7 +12,7 @@ celery = Celery('tasks', backend='amqp')
 celery.config_from_object('celeryconfig')
 
 
-@task(name="firewall.tasks.reload_firewall_task")
+@task(name="firewall.reload_firewall")
 def reload_firewall(data4, data6):
     print "fw"
 
@@ -27,7 +28,16 @@ def reload_firewall(data4, data6):
                         + "\n" + "\n".join(data4['nat']) + "\n")
 
 
-@task(name="firewall.tasks.reload_dhcp_task")
+@task(name="firewall.reload_firewall_vlan")
+def reload_firewall_vlan(data):
+    print "fw vlan"
+    print data
+    br = Switch('cloud')
+    br.migrate(data)
+    print br.list_ports()
+
+
+@task(name="firewall.reload_dhcp")
 def reload_dhcp(data):
     print "dhcp"
 
@@ -88,7 +98,7 @@ def irc_message(data, l_add):
 #        raise
 
 
-@task(name="firewall.tasks.reload_blacklist_task")
+@task(name="firewall.reload_blacklist")
 def reload_blacklist(data):
     print "blacklist"
 

@@ -1,21 +1,26 @@
 from celery import Celery, task
+from os import getenv
 import subprocess
 import re
+import json
 import socket
 from ovs import Switch
 
-IRC_CHANNEL = '/home/cloud/irc/irc.atw.hu/#ik/in'
-DHCP_LOGFILE = '/home/cloud/dhcp.log'
+IRC_CHANNEL = getenv('IRC_CHANNEL', '/home/cloud/irc/irc.atw.hu/#ik/in')
+DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/home/cloud/dhcp.log')
+VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
+FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
 
-CELERY_CREATE_MISSING_QUEUES = True
-celery = Celery('tasks', backend='amqp')
-celery.config_from_object('celeryconfig')
+
+celery = Celery('tasks', backend='amqp', )
+celery.conf.update(CELERY_TASK_RESULT_EXPIRES=3600,
+                   BROKER_URL=getenv("AMQP_URI"),
+                   CELERY_CREATE_MISSING_QUEUES=True)
 
 
 @task(name="firewall.reload_firewall")
-def reload_firewall(data4, data6):
+def reload_firewall(data4, data6, onstart=False):
     print "fw"
-
     process = subprocess.Popen(['/usr/bin/sudo',
                                 '/sbin/ip6tables-restore', '-c'],
                                shell=False, stdin=subprocess.PIPE)
@@ -26,21 +31,26 @@ def reload_firewall(data4, data6):
                                shell=False, stdin=subprocess.PIPE)
     process.communicate("\n".join(data4['filter'])
                         + "\n" + "\n".join(data4['nat']) + "\n")
+    if onstart is False:
+        with open(FIREWALL_CONF, 'w') as f:
+            json.dump([data4, data6], f)
 
 
 @task(name="firewall.reload_firewall_vlan")
-def reload_firewall_vlan(data):
+def reload_firewall_vlan(data, onstart=False):
     print "fw vlan"
-    print data
-    br = Switch('cloud')
+#    print data
+    br = Switch('firewall')
     br.migrate(data)
-    print br.list_ports()
+#    print br.list_ports()
+    if onstart is False:
+        with open(VLAN_CONF, 'w') as f:
+            json.dump(data, f)
 
 
 @task(name="firewall.reload_dhcp")
 def reload_dhcp(data):
     print "dhcp"
-
     with open('/tools/dhcp3/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
     subprocess.call(['sudo', '/etc/init.d/isc-dhcp-server',
@@ -145,3 +155,31 @@ def get_dhcp_clients():
             clients[mac] = (ip, hostname, interface)
 
     return clients
+
+
+def start_firewall():
+    try:
+        subprocess.call('sudo ipset create blacklist hash:ip family '
+                        'inet hashsize 4096 maxelem 65536 2>/dev/null',
+                        shell=True)
+        with open(FIREWALL_CONF, 'r') as f:
+            data4, data6 = json.load(f)
+            reload_firewall(data4, data6, True)
+    except:
+        print 'nemsikerult:('
+
+
+def start_networking():
+    try:
+        with open(VLAN_CONF, 'r') as f:
+            data = json.load(f)
+            reload_firewall_vlan(data, True)
+    except:
+        print 'nemsikerult:('
+
+
+def main():
+    start_networking()
+    start_firewall()
+
+main()

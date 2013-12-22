@@ -7,13 +7,13 @@ import socket
 from ovs import Switch
 
 IRC_CHANNEL = getenv('IRC_CHANNEL', '/home/cloud/irc/irc.atw.hu/#ik/in')
-DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/home/cloud/dhcp.log')
+DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
 VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
 FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
 
 
 celery = Celery('tasks', backend='amqp', )
-celery.conf.update(CELERY_TASK_RESULT_EXPIRES=3600,
+celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
                    BROKER_URL=getenv("AMQP_URI"),
                    CELERY_CREATE_MISSING_QUEUES=True)
 
@@ -46,7 +46,7 @@ def reload_firewall_vlan(data, onstart=False):
     if onstart is False:
         with open(VLAN_CONF, 'w') as f:
             json.dump(data, f)
-
+    subprocess.call("/sbin/ip ro add default via 10.7.255.254", shell=True)
 
 @task(name="firewall.reload_dhcp")
 def reload_dhcp(data):
@@ -135,7 +135,7 @@ dhcp_no_free_re = re.compile(r'\S DHCPDISCOVER '
 #                        r'(\((?P<hostnamename>[^)]+)\) )?'
 
 
-@task(name="firewall.tasks.get_dhcp_clients_task")
+@task(name="firewall.get_dhcp_clients")
 def get_dhcp_clients():
     clients = {}
 
@@ -152,7 +152,7 @@ def get_dhcp_clients():
             ip = m.get('ip', None)
             hostname = m.get('hostname', None)
             interface = m.get('interface', None)
-            clients[mac] = (ip, hostname, interface)
+            clients[mac] = {'ip': ip, 'hostname': hostname, 'interface': interface}
 
     return clients
 

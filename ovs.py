@@ -135,7 +135,8 @@ class Switch:
         logging.debug('[ovs] add: %s' % (add, ))
 
         for i in delete:
-            self.delete_port(i)
+            if not i.startswith('gre'):
+                self.delete_port(i)
         for i in add:
             internal = new_ports[i].get('type', '') == 'internal'
             tag = new_ports[i]['tag']

@@ -1,16 +1,14 @@
 from celery import Celery, task
 from os import getenv
-import subprocess
 import re
 import json
-import socket
 from ovs import Switch
 
 IRC_CHANNEL = getenv('IRC_CHANNEL', '/home/cloud/irc/irc.atw.hu/#ik/in')
 DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
 VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
 FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
-
+from utils import NETNS, ns_exec
 
 celery = Celery('tasks', backend='amqp', )
 celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
@@ -21,16 +19,14 @@ celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
 @task(name="firewall.reload_firewall")
 def reload_firewall(data4, data6, onstart=False):
     print "fw"
-    process = subprocess.Popen(['/usr/bin/sudo',
-                                '/sbin/ip6tables-restore', '-c'],
-                               shell=False, stdin=subprocess.PIPE)
-    process.communicate("\n".join(data6['filter']) + "\n")
 
-    process = subprocess.Popen(['/usr/bin/sudo',
-                                '/sbin/iptables-restore', '-c'],
-                               shell=False, stdin=subprocess.PIPE)
-    process.communicate("\n".join(data4['filter'])
-                        + "\n" + "\n".join(data4['nat']) + "\n")
+    ns_exec(NETNS, ('/sbin/ip6tables-restore', '-c'),
+            '\n'.join(data6['filter']) + '\n')
+
+    ns_exec(NETNS, ('/sbin/iptables-restore', '-c'),
+            ('\n'.join(data4['filter']) + '\n' +
+             '\n'.join(data4['nat']) + '\n'))
+
     if onstart is False:
         with open(FIREWALL_CONF, 'w') as f:
             json.dump([data4, data6], f)
@@ -39,22 +35,24 @@ def reload_firewall(data4, data6, onstart=False):
 @task(name="firewall.reload_firewall_vlan")
 def reload_firewall_vlan(data, onstart=False):
     print "fw vlan"
-#    print data
     br = Switch('firewall')
     br.migrate(data)
-#    print br.list_ports()
     if onstart is False:
         with open(VLAN_CONF, 'w') as f:
             json.dump(data, f)
-    subprocess.call("/sbin/ip ro add default via 10.7.255.254", shell=True)
+    GATEWAY = getenv('GATEWAY', '152.66.243.254')
+    try:
+       ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', 'default', 'via', GATEWAY))
+    except:
+       pass
+
 
 @task(name="firewall.reload_dhcp")
 def reload_dhcp(data):
     print "dhcp"
     with open('/tools/dhcp3/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
-    subprocess.call(['sudo', '/etc/init.d/isc-dhcp-server',
-                     'restart'], shell=False)
+    ns_exec(NETNS, ('/etc/init.d/isc-dhcp-server', 'restart'))
 
 
 def ipset_save(data):
@@ -63,9 +61,8 @@ def ipset_save(data):
     data_new = [x['ipv4'] for x in data]
     data_old = []
 
-    p = subprocess.Popen(['/usr/bin/sudo', '/usr/sbin/ipset', 'save',
-                          'blacklist'], shell=False, stdout=subprocess.PIPE)
-    for line in p.stdout:
+    lines = ns_exec(NETNS, ('/usr/sbin/ipset', 'save', 'blacklist'))
+    for line in lines.splitlines():
         x = r.match(line.rstrip())
         if x:
             data_old.append(x.group(1))
@@ -73,7 +70,7 @@ def ipset_save(data):
     l_add = list(set(data_new).difference(set(data_old)))
     l_del = list(set(data_old).difference(set(data_new)))
 
-    return (l_add, l_del, )
+    return (l_add, l_del)
 
 
 def ipset_restore(l_add, l_del):
@@ -83,29 +80,8 @@ def ipset_restore(l_add, l_del):
     ipset = ipset + ['add blacklist %s' % x for x in l_add]
     ipset = ipset + ['del blacklist %s' % x for x in l_del]
 
-    print "\n".join(ipset) + "\n"
-
-    p = subprocess.Popen(['/usr/bin/sudo', '/usr/sbin/ipset', 'restore',
-                          '-exist'], shell=False, stdin=subprocess.PIPE)
-    p.communicate("\n".join(ipset) + "\n")
-
-
-def irc_message(data, l_add):
-    try:
-        with open(IRC_CHANNEL, 'w+') as f:
-            for x in data:
-                try:
-                    hostname = socket.gethostbyaddr(x['ipv4'])[0]
-                except:
-                    hostname = x['ipv4']
-                if x['ipv4'] in l_add:
-                    f.write('%(ip)s(%(hostname)s) kibachva %(reason)s '
-                            'miatt\n' % {'ip': x['ipv4'],
-                                         'reason': x['reason'],
-                                         'hostname': hostname})
-    except:
-        print "nem sikerult mircre irni"
-#        raise
+    ns_exec(NETNS, ('/usr/sbin/ipset', 'restore', '-exist'),
+            '\n'.join(ipset) + '\n')
 
 
 @task(name="firewall.reload_blacklist")
@@ -114,7 +90,6 @@ def reload_blacklist(data):
 
     l_add, l_del = ipset_save(data)
     ipset_restore(l_add, l_del)
-    irc_message(data, l_add)
 
 
 # 2013-06-26 12:16:59 DHCPACK on 10.4.0.14 to 5c:b5:24:e6:5c:81
@@ -131,8 +106,6 @@ dhcp_ack_re = re.compile(r'\S DHCPACK on (?P<ip>[0-9.]+) to '
 dhcp_no_free_re = re.compile(r'\S DHCPDISCOVER '
                              r'from (?P<mac>[a-zA-Z0-9:]+) '
                              r'via (?P<interface>[a-zA-Z0-9]+):')
-#                             r'.* no free leases')
-#                        r'(\((?P<hostnamename>[^)]+)\) )?'
 
 
 @task(name="firewall.get_dhcp_clients")
@@ -152,21 +125,26 @@ def get_dhcp_clients():
             ip = m.get('ip', None)
             hostname = m.get('hostname', None)
             interface = m.get('interface', None)
-            clients[mac] = {'ip': ip, 'hostname': hostname, 'interface': interface}
+            clients[mac] = {'ip': ip, 'hostname': hostname,
+                            'interface': interface}
 
     return clients
 
 
 def start_firewall():
     try:
-        subprocess.call('sudo ipset create blacklist hash:ip family '
-                        'inet hashsize 4096 maxelem 65536 2>/dev/null',
-                        shell=True)
+        ns_exec(NETNS, ('/usr/sbin/ipset', 'create', 'blacklist',
+                        'hash:ip', 'family', 'inet', 'hashsize',
+                        '4096', 'maxelem', '65536'))
+    except:
+        pass
+    try:
         with open(FIREWALL_CONF, 'r') as f:
             data4, data6 = json.load(f)
             reload_firewall(data4, data6, True)
     except:
         print 'nemsikerult:('
+        raise
 
 
 def start_networking():
@@ -176,6 +154,7 @@ def start_networking():
             reload_firewall_vlan(data, True)
     except:
         print 'nemsikerult:('
+        raise
 
 
 def main():

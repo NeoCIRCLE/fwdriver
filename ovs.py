@@ -1,6 +1,7 @@
-import subprocess
 from netaddr import IPNetwork
 import logging
+
+from utils import NETNS, sudo, ns_exec
 
 
 class IPDevice:
@@ -8,9 +9,8 @@ class IPDevice:
         self.devname = devname
 
     def _run(self, *args):
-        args = ('sudo', 'ip', 'addr', ) + args
-        logging.debug('subprocess_check_output: {}'.format(args))
-        return subprocess.check_output(args)
+        args = ('/sbin/ip', 'addr', ) + args
+        return ns_exec(NETNS, args)
 
     def show(self):
         retval = []
@@ -27,6 +27,9 @@ class IPDevice:
 
     def add(self, address):
         self._run('add', str(address), 'dev', self.devname)
+
+    def up(self):
+        ns_exec(NETNS, ('/sbin/ip', 'link', 'set', 'up', self.devname))
 
     def migrate(self, new_addresses):
         old_addresses = [str(x) for x in self.show()]
@@ -53,8 +56,12 @@ class Switch:
             pass
 
     def _run(self, *args):
-        args = ('sudo', 'ovs-vsctl', ) + args
-        return subprocess.check_output(args)
+        args = ('ovs-vsctl', ) + args
+        return sudo(args)
+
+    def _setns(self, dev):
+        args = ('/sbin/ip', 'link', 'set', dev, 'netns', NETNS)
+        return sudo(args)
 
     def list_ports(self):
         retval = {}
@@ -88,22 +95,17 @@ class Switch:
             params = ['add-bond', self.brname,
                       name] + interfaces + ['tag=%d' % int(tag)]
         else:
-            params = ['add-port', self.brname, name, 'tag=%d' % int(tag)]
+            params = ['add-port', self.brname, name]
+            if tag is not None:
+                params = params + ['tag=%d' % int(tag)]
         if internal:
             params = params + ['--',  'set', 'Interface', interfaces[0],
                                'type=internal']
         if trunks is not None and len(trunks) > 0:
             params.append('trunks=%s' % trunks)
         self._run(*params)
-        self.ip_link_up(interfaces)
-
-    def ip_link_up(self, interfaces):
-        for interface in interfaces:
-            try:
-                subprocess.check_output(['sudo', 'ip', 'link',
-                                         'set', 'up', interface])
-            except:
-                pass
+        if not internal:
+            self._setns(name)
 
     def delete_port(self, name):
         self._run('del-port', self.brname, name)
@@ -139,7 +141,7 @@ class Switch:
                 self.delete_port(i)
         for i in add:
             internal = new_ports[i].get('type', '') == 'internal'
-            tag = new_ports[i]['tag']
+            tag = new_ports[i].get('tag', None)
             trunks = new_ports[i].get('trunks', [])
             interfaces = new_ports[i]['interfaces']
             self.add_port(i, interfaces, tag, trunks, internal)
@@ -150,5 +152,7 @@ class Switch:
                 interface.migrate([IPNetwork(x)
                                    for x in data.get('addresses', [])
                                   if x != 'None'])
+                if new_ports[i].get('type', '') == 'internal':
+                    interface.up()
             except:
                 pass

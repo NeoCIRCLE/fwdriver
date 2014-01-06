@@ -1,7 +1,7 @@
 from netaddr import IPNetwork
 import logging
 
-from utils import NETNS, sudo, ns_exec
+from utils import NETNS, sudo, ns_exec, MAC
 
 
 class IPDevice:
@@ -100,12 +100,15 @@ class Switch:
                 params = params + ['tag=%d' % int(tag)]
         if internal:
             params = params + ['--',  'set', 'Interface', interfaces[0],
-                               'type=internal']
+                               'type=internal', 'mac=%s' % MAC]
         if trunks is not None and len(trunks) > 0:
             params.append('trunks=%s' % trunks)
         self._run(*params)
         if not internal:
-            self._setns(name)
+            try:
+                self._setns(name)
+            except:
+                pass
 
     def delete_port(self, name):
         self._run('del-port', self.brname, name)
@@ -151,8 +154,8 @@ class Switch:
             try:
                 interface.migrate([IPNetwork(x)
                                    for x in data.get('addresses', [])
-                                  if x != 'None'])
-                if new_ports[i].get('type', '') == 'internal':
+                                   if x != 'None'])
+                if data.get('type', '') == 'internal':
                     interface.up()
             except:
                 pass

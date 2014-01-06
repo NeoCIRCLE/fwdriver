@@ -1,11 +1,16 @@
 from os import getenv, devnull
 import subprocess as sp
 import logging
+import json
 
+logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 NETNS = getenv('NETNS', 'fw')
+MAC = getenv('MAC')
+UPLINK = json.loads(getenv('UPLINK', '[]'))
+ADDRESSES = json.loads(getenv('ADDRESSES', '{}'))
 
 
 def sudo(args, stdin=None):

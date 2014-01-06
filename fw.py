@@ -4,16 +4,85 @@ import re
 import json
 from ovs import Switch
 
-IRC_CHANNEL = getenv('IRC_CHANNEL', '/home/cloud/irc/irc.atw.hu/#ik/in')
 DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
 VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
 FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
-from utils import NETNS, ns_exec
+from utils import NETNS, ns_exec, sudo, ADDRESSES, UPLINK
 
 celery = Celery('tasks', backend='amqp', )
 celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
                    BROKER_URL=getenv("AMQP_URI"),
                    CELERY_CREATE_MISSING_QUEUES=True)
+
+
+r'''
+ ________
+/        \
+|install:|
+\________/
+
+run as root:
+
+adduser fw
+apt-get update
+apt-get install virtualenvwrapper isc-dhcp-server openvswitch-switch\
+    iptables openvswitch-controller git linux-image-generic-lts-raring
+
+cat > /etc/dhcp/dhcpd.conf <<END
+ddns-update-style none;
+default-lease-time 60000;
+max-lease-time 720000;
+log-facility local7;
+include "/tools/dhcp3/dhcpd.conf.generated";
+END
+
+mkdir -p /tools/dhcp3/
+touch /tools/dhcp3/dhcpd.conf.generated && \
+    chown fw:fw /tools/dhcp3/dhcpd.conf.generated
+
+cat > /etc/sudoers.d/firewall <<END
+fw ALL= (ALL) NOPASSWD: /sbin/ip netns exec fw /sbin/ip addr *, /sbin/ip netns exec fw /sbin/ip ro *, /sbin/ip netns exec fw /sbin/ip link *, /sbin/ip netns exec fw /usr/sbin/ipset *, /usr/bin/ovs-vsctl, /sbin/ip netns exec fw /sbin/iptables-restore -c, /sbin/ip netns exec fw /sbin/ip6tables-restore -c, /etc/init.d/isc-dhcp-server restart, /sbin/ip link *
+END
+
+chmod 440 /etc/sudoers.d/firewall
+
+cat >> /etc/rc.local <<END
+#!/bin/sh -e
+/sbin/ip netns add fw
+ovs-vsctl del-br firewall
+/sbin/ip netns exec fw /etc/init.d/openvswitch-switch restart
+/sbin/ip netns exec fw sysctl -f
+exit 0
+END
+
+cat >> /etc/sysctl.conf <<END
+net.ipv4.ip_forward=1
+net.ipv6.conf.all.forwarding=1
+END
+
+/etc/rc.local
+
+su - fw
+git clone git@git.ik.bme.hu:circle/fwdriver.git
+mkvirtualenv fw
+pip install -r fwdriver/requirements.txt
+exit
+
+cp ~fw/fwdriver/miscellaneous/firewall.conf /etc/init/
+
+cat >> ~fw/.virtualenvs/fw/local/bin/postactivate <<END
+export UPLINK='["eth1"]'
+export GATEWAY="152.66.243.254"
+export ADDRESSES='{"vlan0006": ["152.66.243.60/32", "152.66.243.62/32", "152.66.243.97/32", "152.66.243.98/32", "152.66.243.130/32", "152.66.243.147/32", "152.66.243.148/32", "152.66.243.149/32"]}'
+export AMQP_URI="amqp://guest:guest@localhost:5672/vhost"
+export MAC='02\:00\:98\:42\:f3\:92'
+END
+
+reboot
+
+ip netns exec fw ip a
+
+'''
 
 
 @task(name="firewall.reload_firewall")
@@ -35,6 +104,12 @@ def reload_firewall(data4, data6, onstart=False):
 @task(name="firewall.reload_firewall_vlan")
 def reload_firewall_vlan(data, onstart=False):
     print "fw vlan"
+    for k, v in ADDRESSES.items():
+        data[k]['addresses'] = data[k]['addresses'] + v
+    try:
+        data[UPLINK[0]] = {'interfaces': UPLINK}
+    except:
+        pass
     br = Switch('firewall')
     br.migrate(data)
     if onstart is False:
@@ -42,9 +117,11 @@ def reload_firewall_vlan(data, onstart=False):
             json.dump(data, f)
     GATEWAY = getenv('GATEWAY', '152.66.243.254')
     try:
-       ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', 'default', 'via', GATEWAY))
+        ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', 'default', 'via', GATEWAY))
+        ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', '10.12.0.0/22',
+                        'via', '10.12.255.253'))
     except:
-       pass
+        pass
 
 
 @task(name="firewall.reload_dhcp")
@@ -52,7 +129,7 @@ def reload_dhcp(data):
     print "dhcp"
     with open('/tools/dhcp3/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
-    ns_exec(NETNS, ('/etc/init.d/isc-dhcp-server', 'restart'))
+    sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
 
 
 def ipset_save(data):
@@ -144,7 +221,7 @@ def start_firewall():
             reload_firewall(data4, data6, True)
     except:
         print 'nemsikerult:('
-        raise
+#        raise
 
 
 def start_networking():

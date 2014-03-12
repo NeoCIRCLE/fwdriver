@@ -46,7 +46,7 @@ END
 
 chmod 440 /etc/sudoers.d/firewall
 
-cat >> /etc/rc.local <<END
+cat > /etc/rc.local <<END
 #!/bin/sh -e
 /sbin/ip netns add fw
 ovs-vsctl del-br firewall

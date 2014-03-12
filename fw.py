@@ -231,7 +231,7 @@ def start_networking():
             reload_firewall_vlan(data, True)
     except:
         print 'nemsikerult:('
-        raise
+#        raise
 
 
 def main():

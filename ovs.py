@@ -96,7 +96,7 @@ class Switch:
                       name] + interfaces + ['tag=%d' % int(tag)]
         else:
             params = ['add-port', self.brname, name]
-            if tag is not None:
+            if tag is not None and (trunks is None or len(trunks) == 0):
                 params = params + ['tag=%d' % int(tag)]
         if internal:
             params = params + ['--',  'set', 'Interface', interfaces[0],

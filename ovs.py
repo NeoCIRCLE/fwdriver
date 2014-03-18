@@ -1,12 +1,57 @@
 from netaddr import IPNetwork
+from subprocess import CalledProcessError
 import logging
 
-from utils import NETNS, sudo, ns_exec, MAC
+from utils import NETNS, sudo, ns_exec, HA
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
-class IPDevice:
-    def __init__(self, devname):
-        self.devname = devname
+class Interface(object):
+    def __init__(self, name, data, with_show=False):
+        # {"interfaces": ["eth1"], "tag": 2, "trunks": [1, 2, 3],
+        # "type": "internal", "addresses": ["193.006.003.130/24", "None"]}
+        self.name = name
+        self.is_veth = data.get('type', 'external') == 'internal'
+
+        try:
+            self.untagged = int(data['tag'])
+        except (TypeError, KeyError):
+            self.untagged = None
+
+        try:
+            self.tagged = frozenset(int(i) for i in data['trunks'])
+        except (TypeError, KeyError):
+            self.tagged = frozenset()
+
+        if with_show:
+            data['addresses'] = self.show()
+        try:
+            self.addresses = frozenset(IPNetwork(i) for i in data['addresses']
+                                       if i != 'None')
+        except (TypeError, KeyError):
+            self.addresses = frozenset()
+
+    def __repr__(self):
+        return '<Interface: %s veth=%s| %s>' % (
+            self.name, self.is_veth, (self.untagged, self.tagged,
+                                      self.addresses))
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
+    def __hash__(self):
+        r = reduce(lambda acc, x: acc ^ hash(x),
+                   (self.name, self.is_veth, self.untagged, self.tagged), 0)
+        return r
+
+    @property
+    def external_name(self):
+        if self.is_veth:
+            return '%s-EXTERNAL' % self.name
+        else:
+            return self.name
 
     def _run(self, *args):
         args = ('/sbin/ip', 'addr', ) + args
@@ -14,40 +59,46 @@ class IPDevice:
 
     def show(self):
         retval = []
-        for line in self._run('show', self.devname,
-                              'scope', 'global').splitlines():
-            t = line.split()
-            if len(t) > 0 and t[0] in ('inet', 'inet6'):
-                retval.append(IPNetwork(t[1]))
-        logging.debug('[ip-%s] show: %s' % (self.devname, str(retval)))
+        try:
+            for line in self._run('show', self.name,
+                                  'scope', 'global').splitlines():
+                t = line.split()
+                if len(t) > 0 and t[0] in ('inet', 'inet6'):
+                    retval.append(IPNetwork(t[1]))
+        except CalledProcessError:
+            pass
+
+        logger.debug('[ip-%s] show: %s' % (self.name, str(retval)))
         return retval
 
-    def delete(self, address):
-        self._run('del', str(address), 'dev', self.devname)
+    def delete_address(self, address):
+        self._run('del', str(address), 'dev', self.name)
 
-    def add(self, address):
-        self._run('add', str(address), 'dev', self.devname)
+    def add_address(self, address):
+        self._run('add', str(address), 'dev', self.name)
 
     def up(self):
-        ns_exec(NETNS, ('/sbin/ip', 'link', 'set', 'up', self.devname))
+        if self.is_veth:
+            ns_exec(NETNS, ('/sbin/ip', 'link', 'set', 'up', self.name))
+        sudo(('/sbin/ip', 'link', 'set', 'up', self.external_name))
 
-    def migrate(self, new_addresses):
+    def migrate(self):
         old_addresses = [str(x) for x in self.show()]
-        new_addresses = [str(x) for x in new_addresses]
-        delete = list(set(old_addresses) - set(new_addresses))
-        add = list(set(new_addresses) - set(old_addresses))
+        new_addresses = [str(x) for x in self.addresses]
+        to_delete = list(set(old_addresses) - set(new_addresses))
+        to_add = list(set(new_addresses) - set(old_addresses))
 
-        logging.debug('[ip-%s] delete: %s' % (self.devname, str(delete)))
-        logging.debug('[ip-%s] add: %s' % (self.devname, str(add)))
+        logger.debug('[ip-%s] delete: %s' % (self.name, str(to_delete)))
+        logger.debug('[ip-%s] add: %s' % (self.name, str(to_add)))
 
-        for i in delete:
-            self.delete(i)
+        for i in to_delete:
+            self.delete_address(i)
 
-        for i in add:
-            self.add(i)
+        for i in to_add:
+            self.add_address(i)
 
 
-class Switch:
+class Switch(object):
     def __init__(self, brname):
         self.brname = brname
         try:
@@ -64,98 +115,86 @@ class Switch:
         return sudo(args)
 
     def list_ports(self):
-        retval = {}
+        ovs = {}
         bridge = None
         port = None
         for line in self._run('show').splitlines():
             t = line.split()
             if t[0] == 'Bridge':
                 bridge = t[1]
-                retval[bridge] = {}
+                ovs[bridge] = {}
             elif t[0] == 'Port':
                 port = t[1].replace('"', '')  # valahol idezojel van
-                retval[bridge][port] = {}
-                retval[bridge][port]['interfaces'] = []
-            elif t[0] == 'Interface':
-                interface = t[1].replace('"', '')  # valahol idezojel van
-                retval[bridge][port]['interfaces'].append(interface)
+                if port.endswith('-EXTERNAL'):
+                    port = port.rstrip('-EXTERNAL')
+                    type = 'internal'
+                else:
+                    type = 'external'
+                ovs[bridge][port] = {'type': type}
             elif t[0] == 'tag:':
-                tag = int(t[1])
-                retval[bridge][port]['tag'] = tag
-            elif t[0] == 'type:':
-                retval[bridge][port]['type'] = t[1]
+                ovs[bridge][port]['tag'] = int(t[1])
             elif t[0] == 'trunks:':
                 trunks = [int(p.strip('[,]')) for p in t[1:]]
-                retval[bridge][port]['trunks'] = trunks
-        return retval.get(self.brname, {})
+                ovs[bridge][port]['trunks'] = trunks
+        # Create Interface objects
+        return [Interface(name, data, with_show=True)
+                for name, data in ovs.get(self.brname, {}).items()
+                if name != self.brname]
 
-    def add_port(self, name, interfaces, tag, trunks, internal=True):
-        if len(interfaces) > 1:
-            # bond
-            params = ['add-bond', self.brname,
-                      name] + interfaces + ['tag=%d' % int(tag)]
-        else:
-            params = ['add-port', self.brname, name]
-            if tag is not None and (trunks is None or len(trunks) == 0):
-                params = params + ['tag=%d' % int(tag)]
-        if internal:
-            params = params + ['--',  'set', 'Interface', interfaces[0],
-                               'type=internal', 'mac=%s' % MAC]
-        if trunks is not None and len(trunks) > 0:
-            params.append('trunks=%s' % trunks)
+    def add_port(self, interface):
+        params = ['add-port', self.brname, interface.external_name]
+        if interface.untagged and not interface.tagged:
+            params.append('tag=%d' % int(interface.untagged))
+        if interface.tagged:
+            params.append('trunks=%s' % list(interface.tagged))
+
         self._run(*params)
-        if not internal:
-            try:
-                self._setns(name)
-            except:
-                pass
+        # move interface into namespace
+        try:
+            if interface.is_veth:
+                sudo(('/sbin/ip', 'link', 'add', interface.external_name,
+                      'type', 'veth', 'peer', 'name', interface.name))
+                self._setns(interface.name)
+        except:
+            pass
 
-    def delete_port(self, name):
-        self._run('del-port', self.brname, name)
+    def delete_port(self, interface):
+        self._run('del-port', self.brname, interface.external_name)
+        if interface.is_veth:
+            try:
+                sudo(('/sbin/ip', 'link', 'del', interface.external_name))
+            except CalledProcessError:
+                pass
 
     def migrate(self, new_ports):
-        old_ports = self.list_ports()
-        add = []
-        delete = []
+        old_interfaces = self.list_ports()
+        new_interfaces = [Interface(port, data)
+                          for port, data in new_ports.items()]
 
-        for port, data in new_ports.items():
-            if port not in old_ports:
-                # new port
-                add.append(port)
-            elif (old_ports[port].get('tag', None) !=
-                    new_ports[port].get('tag', None) or
-                    old_ports[port].get('trunks', None) !=
-                    new_ports[port].get('trunks', None) or
-                    old_ports[port].get('interfaces', None) !=
-                    new_ports[port].get('interfaces', None)):
-                # modified port
-                delete.append(port)
-                add.append(port)
+        add = [i for i in new_interfaces
+               if i not in old_interfaces]
+        delete = [i for i in old_interfaces
+                  if i not in new_interfaces]
 
-        delete = delete + list(set(old_ports.keys()) -
-                               set(new_ports.keys()))
-        delete.remove(self.brname)
+        add = list(set(new_interfaces).difference(set(old_interfaces)))
+        delete = list(set(old_interfaces).difference(set(new_interfaces)))
 
-        logging.debug('[ovs delete: %s' % (delete, ))
-        logging.debug('[ovs] add: %s' % (add, ))
+        logger.debug('[ovs delete]: %s' % delete)
+        logger.debug('[ovs add]: %s' % add)
 
-        for i in delete:
-            if not i.startswith('gre'):
-                self.delete_port(i)
-        for i in add:
-            internal = new_ports[i].get('type', '') == 'internal'
-            tag = new_ports[i].get('tag', None)
-            trunks = new_ports[i].get('trunks', [])
-            interfaces = new_ports[i]['interfaces']
-            self.add_port(i, interfaces, tag, trunks, internal)
+        for interface in delete:
+            self.delete_port(interface)
 
-        for port, data in new_ports.items():
-            interface = IPDevice(devname=port)
+        for interface in add:
+            self.add_port(interface)
+
+        for interface in new_interfaces:
             try:
-                interface.migrate([IPNetwork(x)
-                                   for x in data.get('addresses', [])
-                                   if x != 'None'])
-                if data.get('type', '') == 'internal':
+                if interface.is_veth or not HA:
                     interface.up()
-            except:
-                pass
+            except CalledProcessError as e:
+                logger.warning(e)
+            try:
+                interface.migrate()
+            except CalledProcessError as e:
+                logger.warning(e)

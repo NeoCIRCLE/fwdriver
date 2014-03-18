@@ -5,11 +5,12 @@ import json
 import logging
 
 from ovs import Switch
+from utils import (NETNS, ns_exec, sudo, ADDRESSES,
+                   dhcp_no_free_re, dhcp_ack_re)
 
 DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
 VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
 FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
-from utils import NETNS, ns_exec, sudo, ADDRESSES, UPLINK
 
 celery = Celery('tasks', backend='amqp', )
 celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
@@ -20,9 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @task(name="firewall.reload_firewall")
-def reload_firewall(data4, data6, onstart=False):
-    print "fw"
-
+def reload_firewall(data4, data6, save_config=True):
     ns_exec(NETNS, ('/sbin/ip6tables-restore', '-c'),
             '\n'.join(data6['filter']) + '\n')
 
@@ -30,40 +29,41 @@ def reload_firewall(data4, data6, onstart=False):
             ('\n'.join(data4['filter']) + '\n' +
              '\n'.join(data4['nat']) + '\n'))
 
-    if onstart is False:
+    if save_config:
         with open(FIREWALL_CONF, 'w') as f:
             json.dump([data4, data6], f)
 
+    logger.info("Firewall configuration is reloaded.")
+
 
 @task(name="firewall.reload_firewall_vlan")
-def reload_firewall_vlan(data, onstart=False):
-    print "fw vlan"
+def reload_firewall_vlan(data, save_config=True):
+    # Add additional addresses from config
     for k, v in ADDRESSES.items():
-        data[k]['addresses'] = data[k]['addresses'] + v
-    try:
-        data[UPLINK[0]] = {'interfaces': UPLINK}
-    except:
-        pass
+        data[k]['addresses'] += v
+
     br = Switch('firewall')
     br.migrate(data)
-    if onstart is False:
+
+    if save_config:
         with open(VLAN_CONF, 'w') as f:
             json.dump(data, f)
-    GATEWAY = getenv('GATEWAY', '152.66.243.254')
+
     try:
-        ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', 'default', 'via', GATEWAY))
-        ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', '10.12.0.0/22',
-                        'via', '10.12.255.253'))
+        ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', 'default', 'via',
+                        getenv('GATEWAY', '152.66.243.254')))
     except:
         pass
+
+    logger.info("Interface (vlan) configuration is reloaded.")
 
 
 @task(name="firewall.reload_dhcp")
 def reload_dhcp(data):
-    print "dhcp"
-    with open('/tools/dhcp3/dhcpd.conf.generated', 'w') as f:
+    with open('/etc/dhcp/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
     sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
+    logger.info("DHCP configuration is reloaded.")
 
 
 def ipset_save(data):
@@ -88,8 +88,8 @@ def ipset_restore(l_add, l_del):
     ipset = []
     ipset.append('create blacklist hash:ip family inet hashsize '
                  '4096 maxelem 65536')
-    ipset = ipset + ['add blacklist %s' % x for x in l_add]
-    ipset = ipset + ['del blacklist %s' % x for x in l_del]
+    ipset += ['add blacklist %s' % x for x in l_add]
+    ipset += ['del blacklist %s' % x for x in l_del]
 
     ns_exec(NETNS, ('/usr/sbin/ipset', 'restore', '-exist'),
             '\n'.join(ipset) + '\n')
@@ -97,26 +97,9 @@ def ipset_restore(l_add, l_del):
 
 @task(name="firewall.reload_blacklist")
 def reload_blacklist(data):
-    print "blacklist"
-
     l_add, l_del = ipset_save(data)
     ipset_restore(l_add, l_del)
-
-
-# 2013-06-26 12:16:59 DHCPACK on 10.4.0.14 to 5c:b5:24:e6:5c:81
-#      (android_b555bfdba7c837d) via vlan0004
-
-dhcp_ack_re = re.compile(r'\S DHCPACK on (?P<ip>[0-9.]+) to '
-                         r'(?P<mac>[a-zA-Z0-9:]+) '
-                         r'(\((?P<hostname>[^)]+)\) )?'
-                         r'via (?P<interface>[a-zA-Z0-9]+)')
-
-# 2013-06-25 11:08:38 DHCPDISCOVER from 48:5b:39:8e:82:78
-#      via vlan0005: network 10.5.0.0/16: no free leases
-
-dhcp_no_free_re = re.compile(r'\S DHCPDISCOVER '
-                             r'from (?P<mac>[a-zA-Z0-9:]+) '
-                             r'via (?P<interface>[a-zA-Z0-9]+):')
+    logger.info("Blacklist configuration is reloaded.")
 
 
 @task(name="firewall.get_dhcp_clients")
@@ -153,9 +136,8 @@ def start_firewall():
         with open(FIREWALL_CONF, 'r') as f:
             data4, data6 = json.load(f)
             reload_firewall(data4, data6, True)
-    except:
-        print 'nemsikerult:('
-#        raise
+    except Exception as e:
+        logger.error('Unhandled exception: %s', unicode(e))
 
 
 def start_networking():
@@ -163,13 +145,13 @@ def start_networking():
         with open(VLAN_CONF, 'r') as f:
             data = json.load(f)
             reload_firewall_vlan(data, True)
-    except:
-        print 'nemsikerult:('
-#        raise
+    except Exception as e:
+        logger.error('Unhandled exception: %s', unicode(e))
 
 
 def main():
     start_networking()
     start_firewall()
+
 
 main()

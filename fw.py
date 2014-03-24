@@ -12,9 +12,14 @@ DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
 VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
 FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
 
-celery = Celery('tasks', backend='amqp', )
-celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
-                   BROKER_URL=getenv("AMQP_URI"),
+CACHE_URI = getenv('CACHE_URI')
+AMQP_URI = getenv('AMQP_URI')
+
+celery = Celery('tasks',)
+celery.conf.update(CELERY_CACHE_BACKEND=CACHE_URI,
+                   CELERY_RESULT_BACKEND='cache',
+                   CELERY_TASK_RESULT_EXPIRES=300,
+                   BROKER_URL=AMQP_URI,
                    CELERY_CREATE_MISSING_QUEUES=True)
 
 logger = logging.getLogger(__name__)

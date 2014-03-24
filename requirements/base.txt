@@ -9,4 +9,4 @@ netaddr==0.7.10
 python-dateutil==2.1
 six==1.4.1
 wsgiref==0.1.2
-
+pylibmc

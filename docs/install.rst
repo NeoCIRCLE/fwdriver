@@ -14,7 +14,7 @@ Update the package lists, and install the required system software::
 
   $ sudo apt-get update
   $ sudo apt-get install virtualenvwrapper isc-dhcp-server openvswitch-switch\
-    iptables openvswitch-controller git linux-image-generic-lts-raring ntp
+    iptables ipset openvswitch-controller git linux-image-generic-lts-raring ntp
 
 Configure ISC-DHCP server::
 
@@ -78,6 +78,7 @@ Set up default Firewall configuration::
 
   $ cat >> ~fw/.virtualenvs/fw/local/bin/postactivate <<END
   export GATEWAY="152.66.243.254"
+  export CACHE_URI='pylibmc://${PORTAL_IP}:11211/'
   export AMQP_URI="amqp://guest:guest@localhost:5672/vhost"
   END
   $ exit

@@ -54,7 +54,7 @@ class Interface(object):
             return self.name
 
     def _run(self, *args):
-        args = ('/sbin/ip', 'addr', ) + args
+        args = ('ip', 'addr', ) + args
         return ns_exec(NETNS, args)
 
     def show(self):
@@ -79,8 +79,8 @@ class Interface(object):
 
     def up(self):
         if self.is_veth:
-            ns_exec(NETNS, ('/sbin/ip', 'link', 'set', 'up', self.name))
-        sudo(('/sbin/ip', 'link', 'set', 'up', self.external_name))
+            ns_exec(NETNS, ('ip', 'link', 'set', 'up', self.name))
+        sudo(('ip', 'link', 'set', 'up', self.external_name))
 
     def migrate(self):
         old_addresses = [str(x) for x in self.show()]
@@ -111,7 +111,7 @@ class Switch(object):
         return sudo(args)
 
     def _setns(self, dev):
-        args = ('/sbin/ip', 'link', 'set', dev, 'netns', NETNS)
+        args = ('ip', 'link', 'set', dev, 'netns', NETNS)
         return sudo(args)
 
     def list_ports(self):
@@ -152,7 +152,7 @@ class Switch(object):
         # move interface into namespace
         try:
             if interface.is_veth:
-                sudo(('/sbin/ip', 'link', 'add', interface.external_name,
+                sudo(('ip', 'link', 'add', interface.external_name,
                       'type', 'veth', 'peer', 'name', interface.name))
                 self._setns(interface.name)
         except:
@@ -162,7 +162,7 @@ class Switch(object):
         self._run('del-port', self.brname, interface.external_name)
         if interface.is_veth:
             try:
-                sudo(('/sbin/ip', 'link', 'del', interface.external_name))
+                sudo(('ip', 'link', 'del', interface.external_name))
             except CalledProcessError:
                 pass
 

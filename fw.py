@@ -37,9 +37,9 @@ def reload_firewall(data4, data6, save_config=True):
     if isinstance(data6, dict):
         data6 = ('\n'.join(data6['filter']) + '\n')
 
-    ns_exec(NETNS, ('/sbin/ip6tables-restore', '-c'), data6)
+    ns_exec(NETNS, ('ip6tables-restore', '-c'), data6)
 
-    ns_exec(NETNS, ('/sbin/iptables-restore', '-c'), data4)
+    ns_exec(NETNS, ('iptables-restore', '-c'), data4)
 
     if save_config:
         with open(FIREWALL_CONF, 'w') as f:
@@ -54,6 +54,10 @@ def reload_firewall_vlan(data, save_config=True):
     for k, v in ADDRESSES.items():
         data[k]['addresses'] += v
 
+    uplink = getenv('UPLINK', None)
+    if uplink:
+        data[uplink] = {'interfaces': uplink}
+
     br = Switch('firewall')
     br.migrate(data)
 
@@ -62,7 +66,7 @@ def reload_firewall_vlan(data, save_config=True):
             json.dump(data, f)
 
     try:
-        ns_exec(NETNS, ('/sbin/ip', 'ro', 'add', 'default', 'via',
+        ns_exec(NETNS, ('ip', 'ro', 'add', 'default', 'via',
                         getenv('GATEWAY', '152.66.243.254')))
     except:
         pass
@@ -84,7 +88,7 @@ def ipset_save(data):
     data_new = [x['ipv4'] for x in data]
     data_old = []
 
-    lines = ns_exec(NETNS, ('/usr/sbin/ipset', 'save', 'blacklist'))
+    lines = ns_exec(NETNS, ('ipset', 'save', 'blacklist'))
     for line in lines.splitlines():
         x = r.match(line.rstrip())
         if x:
@@ -103,7 +107,7 @@ def ipset_restore(l_add, l_del):
     ipset += ['add blacklist %s' % x for x in l_add]
     ipset += ['del blacklist %s' % x for x in l_del]
 
-    ns_exec(NETNS, ('/usr/sbin/ipset', 'restore', '-exist'),
+    ns_exec(NETNS, ('ipset', 'restore', '-exist'),
             '\n'.join(ipset) + '\n')
 
 
@@ -139,7 +143,7 @@ def get_dhcp_clients():
 
 def start_firewall():
     try:
-        ns_exec(NETNS, ('/usr/sbin/ipset', 'create', 'blacklist',
+        ns_exec(NETNS, ('ipset', 'create', 'blacklist',
                         'hash:ip', 'family', 'inet', 'hashsize',
                         '4096', 'maxelem', '65536'))
     except:

@@ -33,7 +33,8 @@ Configure ISC-DHCP server::
 Configure sudo::
 
   $ sudo tee /etc/sudoers.d/firewall <<END
-  fw ALL= (ALL) NOPASSWD: /sbin/ip netns exec fw /sbin/ip addr *, /sbin/ip netns exec fw /sbin/ip ro *, /sbin/ip netns exec fw /sbin/ip link *, /sbin/ip netns exec fw /usr/sbin/ipset *, /usr/bin/ovs-vsctl, /sbin/ip netns exec fw /sbin/iptables-restore -c, /sbin/ip netns exec fw /sbin/ip6tables-restore -c, /etc/init.d/isc-dhcp-server restart, /sbin/ip link *
+  fw ALL= (ALL) NOPASSWD: /sbin/ip netns exec fw ip addr *, /sbin/ip netns exec fw ip ro *, /sbin/ip netns exec fw ip link *, /sbin/ip netns exec fw ipset *, /usr/bin/ovs-vsctl, /sbin/ip netns exec fw iptables-restore -c, /sbin/ip netns exec fw ip6tables-restore -c, /etc/init.d/isc-dhcp-server restart, /sbin/ip link *
+
   END
 
   $ sudo chmod 440 /etc/sudoers.d/firewall

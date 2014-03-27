@@ -49,7 +49,7 @@ class Interface(object):
     @property
     def external_name(self):
         if self.is_veth:
-            return '%s-EXTERNAL' % self.name
+            return '%s-EXT' % self.name
         else:
             return self.name
 
@@ -125,8 +125,8 @@ class Switch(object):
                 ovs[bridge] = {}
             elif t[0] == 'Port':
                 port = t[1].replace('"', '')  # valahol idezojel van
-                if port.endswith('-EXTERNAL'):
-                    port = port.rstrip('-EXTERNAL')
+                if port.endswith('-EXT'):
+                    port = port.rstrip('-EXT')
                     type = 'internal'
                 else:
                     type = 'external'

@@ -58,7 +58,7 @@ Clone the git repository::
 Set up *virtualenvwrapper* and the *virtual Python environment* for the project::
 
   $ source /etc/bash_completion.d/virtualenvwrapper
-  $ mkvirtualenv circle
+  $ mkvirtualenv fw
 
 Install the required Python libraries to the virtual environment::
 

@@ -148,7 +148,6 @@ class Switch(object):
         if interface.tagged:
             params.append('trunks=%s' % list(interface.tagged))
 
-        self._run(*params)
         # move interface into namespace
         try:
             if interface.is_veth:
@@ -157,6 +156,7 @@ class Switch(object):
                 self._setns(interface.name)
         except:
             pass
+        self._run(*params)
 
     def delete_port(self, interface):
         self._run('del-port', self.brname, interface.external_name)

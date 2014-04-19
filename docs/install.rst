@@ -40,18 +40,7 @@ Configure sudo::
   $ sudo chmod 440 /etc/sudoers.d/firewall
 
 
-Configure /etc/rc.local::
-
-  $ sudo tee /etc/rc.local <<END
-  #!/bin/sh -e
-
-  /etc/init.d/openvswitch-switch restart
-  /sbin/ip netns add fw
-  ovs-vsctl del-br firewall
-  /sbin/ip netns exec fw sysctl -f /etc/sysctl.d/60-circle-firewall.conf
-  /sbin/ip netns exec fw ip link set lo up
-  exit 0
-  END
+Configure sysctl::
 
   $ sudo tee /etc/sysctl.d/60-circle-firewall.conf <<END
   net.ipv4.ip_forward=1
@@ -83,7 +72,7 @@ Set up default Firewall configuration::
   export AMQP_URI="amqp://guest:guest@localhost:5672/vhost"
   END
   $ exit
-  $ sudo cp ~fw/fwdriver/miscellaneous/firewall.conf /etc/init/
+  $ sudo cp ~fw/fwdriver/miscellaneous/firewall*.conf /etc/init/
 
 
 

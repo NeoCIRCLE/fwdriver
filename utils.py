@@ -1,4 +1,4 @@
-from os import getenv, devnull
+from os import getenv
 import subprocess as sp
 import logging
 import json

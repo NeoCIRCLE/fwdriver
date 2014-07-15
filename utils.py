@@ -30,14 +30,18 @@ dhcp_no_free_re = re.compile(r'\S DHCPDISCOVER '
 
 
 def sudo(args, stdin=None):
-    FNULL = open(devnull, 'w')
     args = ('/usr/bin/sudo', ) + args
     logger.debug('EXEC {}'.format(' '.join(args)))
+
+    p = sp.Popen(args, stdin=sp.PIPE, stderr=sp.PIPE, stdout=sp.PIPE)
     if isinstance(stdin, basestring):
-        proc = sp.Popen(args, stdin=sp.PIPE, stderr=FNULL)
-        return proc.communicate(stdin)
+        stdout, stderr = p.communicate(stdin)
     else:
-        return sp.check_output(args, stderr=FNULL)
+        stdout, stderr = p.communicate()
+    if p.returncode != 0:
+        raise sp.CalledProcessError(
+            p.returncode, sp.list2cmdline(args), stderr)
+    return stdout
 
 
 def ns_exec(netns, args, stdin=None):

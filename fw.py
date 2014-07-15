@@ -37,9 +37,12 @@ def reload_firewall(data4, data6, save_config=True):
     if isinstance(data6, dict):
         data6 = ('\n'.join(data6['filter']) + '\n')
 
-    ns_exec(NETNS, ('ip6tables-restore', '-c'), data6)
-
-    ns_exec(NETNS, ('iptables-restore', '-c'), data4)
+    try:
+        ns_exec(NETNS, ('ip6tables-restore', '-c'), data6)
+        ns_exec(NETNS, ('iptables-restore', '-c'), data4)
+    except:
+        logging.critical('Unhandled exception: ', exc_info=True)
+        raise
 
     if save_config:
         with open(FIREWALL_CONF, 'w') as f:

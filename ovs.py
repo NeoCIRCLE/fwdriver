@@ -15,14 +15,15 @@ class Interface(object):
         self.is_veth = data.get('type', 'external') == 'internal'
 
         try:
-            self.untagged = int(data['tag'])
-        except (TypeError, KeyError):
-            self.untagged = None
-
-        try:
             self.tagged = frozenset(int(i) for i in data['trunks'])
         except (TypeError, KeyError):
             self.tagged = frozenset()
+
+        untagged = data.get('tag')
+        if (untagged and not self.tagged and unicode(untagged).isdecimal()):
+            self.untagged = int(untagged)
+        else:
+            self.untagged = None
 
         if with_show:
             data['addresses'] = self.show()
@@ -41,9 +42,8 @@ class Interface(object):
         return self.__dict__ == other.__dict__
 
     def __hash__(self):
-        r = reduce(lambda acc, x: acc ^ hash(x),
-                   (self.name, self.is_veth, self.untagged, self.tagged), 0)
-        return r
+        return reduce(lambda acc, x: acc ^ hash(x),
+                      self.__dict__.values(), 0)
 
     @property
     def external_name(self):
@@ -143,7 +143,7 @@ class Switch(object):
 
     def add_port(self, interface):
         params = ['add-port', self.brname, interface.external_name]
-        if interface.untagged and not interface.tagged:
+        if interface.untagged:
             params.append('tag=%d' % int(interface.untagged))
         if interface.tagged:
             params.append('trunks=%s' % list(interface.tagged))
@@ -170,11 +170,6 @@ class Switch(object):
         old_interfaces = self.list_ports()
         new_interfaces = [Interface(port, data)
                           for port, data in new_ports.items()]
-
-        add = [i for i in new_interfaces
-               if i not in old_interfaces]
-        delete = [i for i in old_interfaces
-                  if i not in new_interfaces]
 
         add = list(set(new_interfaces).difference(set(old_interfaces)))
         delete = list(set(old_interfaces).difference(set(new_interfaces)))

@@ -5,7 +5,7 @@ import json
 import logging
 
 from ovs import Switch
-from utils import (NETNS, ns_exec, sudo, ADDRESSES,
+from utils import (ns_exec, sudo, ADDRESSES,
                    dhcp_no_free_re, dhcp_ack_re)
 
 DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 @task(name="firewall.reload_firewall")
 def reload_firewall(data4, data6, save_config=True):
     try:
-        ns_exec(NETNS, ('ip6tables-restore', '-c'), data6)
-        ns_exec(NETNS, ('iptables-restore', '-c'), data4)
+        ns_exec(('ip6tables-restore', '-c'), data6)
+        ns_exec(('iptables-restore', '-c'), data4)
     except:
         logging.critical('Unhandled exception: ', exc_info=True)
         raise
@@ -60,8 +60,8 @@ def reload_firewall_vlan(data, save_config=True):
             json.dump(data, f)
 
     try:
-        ns_exec(NETNS, ('ip', 'ro', 'add', 'default', 'via',
-                        getenv('GATEWAY', '152.66.243.254')))
+        ns_exec(('ip', 'ro', 'add', 'default', 'via',
+                 getenv('GATEWAY', '152.66.243.254')))
     except:
         pass
 
@@ -82,7 +82,7 @@ def ipset_save(data):
     data_new = [x['ipv4'] for x in data]
     data_old = []
 
-    lines = ns_exec(NETNS, ('ipset', 'save', 'blacklist'))
+    lines = ns_exec(('ipset', 'save', 'blacklist'))
     for line in lines.splitlines():
         x = r.match(line.rstrip())
         if x:
@@ -101,7 +101,7 @@ def ipset_restore(l_add, l_del):
     ipset += ['add blacklist %s' % x for x in l_add]
     ipset += ['del blacklist %s' % x for x in l_del]
 
-    ns_exec(NETNS, ('ipset', 'restore', '-exist'),
+    ns_exec(('ipset', 'restore', '-exist'),
             '\n'.join(ipset) + '\n')
 
 
@@ -137,9 +137,9 @@ def get_dhcp_clients():
 
 def start_firewall():
     try:
-        ns_exec(NETNS, ('ipset', 'create', 'blacklist',
-                        'hash:ip', 'family', 'inet', 'hashsize',
-                        '4096', 'maxelem', '65536'))
+        ns_exec(('ipset', 'create', 'blacklist', 'hash:ip',
+                 'family', 'inet', 'hashsize', '4096', 'maxelem',
+                 '65536'))
     except:
         pass
     try:

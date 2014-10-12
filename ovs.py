@@ -55,7 +55,7 @@ class Interface(object):
 
     def _run(self, *args):
         args = ('ip', 'addr', ) + args
-        return ns_exec(NETNS, args)
+        return ns_exec(args)
 
     def show(self):
         retval = []
@@ -79,7 +79,7 @@ class Interface(object):
 
     def up(self):
         if self.is_veth:
-            ns_exec(NETNS, ('ip', 'link', 'set', 'up', self.name))
+            ns_exec(('ip', 'link', 'set', 'up', self.name))
         sudo(('ip', 'link', 'set', 'up', self.external_name))
 
     def migrate(self):

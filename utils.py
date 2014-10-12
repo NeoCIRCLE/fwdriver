@@ -44,6 +44,6 @@ def sudo(args, stdin=None):
     return stdout
 
 
-def ns_exec(netns, args, stdin=None):
+def ns_exec(args, stdin=None):
     return sudo(('/sbin/ip', 'netns', 'exec',
                 NETNS) + args, stdin)

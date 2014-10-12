@@ -14,29 +14,20 @@ FIREWALL_CONF = getenv('FIREWALL_CONF', 'firewall.conf')
 
 CACHE_URI = getenv('CACHE_URI')
 AMQP_URI = getenv('AMQP_URI')
-LEGACY = getenv('LEGACY', 'False').upper() == 'TRUE'
 
 celery = Celery('tasks',)
 celery.conf.update(CELERY_TASK_RESULT_EXPIRES=300,
                    BROKER_URL=AMQP_URI,
                    CELERY_CREATE_MISSING_QUEUES=True)
 
-if not LEGACY:
-    celery.conf.update(CELERY_CACHE_BACKEND=CACHE_URI,
-                       CELERY_RESULT_BACKEND='cache')
+celery.conf.update(CELERY_CACHE_BACKEND=CACHE_URI,
+                   CELERY_RESULT_BACKEND='cache')
 
 logger = logging.getLogger(__name__)
 
 
 @task(name="firewall.reload_firewall")
 def reload_firewall(data4, data6, save_config=True):
-    if isinstance(data4, dict):
-        data4 = ('\n'.join(data4['filter']) + '\n' +
-                 '\n'.join(data4['nat']) + '\n')
-
-    if isinstance(data6, dict):
-        data6 = ('\n'.join(data6['filter']) + '\n')
-
     try:
         ns_exec(NETNS, ('ip6tables-restore', '-c'), data6)
         ns_exec(NETNS, ('iptables-restore', '-c'), data4)

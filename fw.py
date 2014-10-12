@@ -32,7 +32,7 @@ def reload_firewall(data4, data6, save_config=True):
         ns_exec(('ip6tables-restore', '-c'), data6)
         ns_exec(('iptables-restore', '-c'), data4)
     except:
-        logging.critical('Unhandled exception: ', exc_info=True)
+        logging.exception('Unhandled exception: ')
         raise
 
     if save_config:
@@ -146,8 +146,8 @@ def start_firewall():
         with open(FIREWALL_CONF, 'r') as f:
             data4, data6 = json.load(f)
             reload_firewall(data4, data6, True)
-    except Exception as e:
-        logger.error('Unhandled exception: %s', unicode(e))
+    except Exception:
+        logger.exception('Unhandled exception: ')
 
 
 def start_networking():
@@ -155,8 +155,8 @@ def start_networking():
         with open(VLAN_CONF, 'r') as f:
             data = json.load(f)
             reload_firewall_vlan(data, True)
-    except Exception as e:
-        logger.error('Unhandled exception: %s', unicode(e))
+    except Exception:
+        logger.exception('Unhandled exception: ')
 
 
 def main():

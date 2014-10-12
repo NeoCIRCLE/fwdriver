@@ -5,7 +5,6 @@ import logging
 from utils import NETNS, sudo, ns_exec, HA
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Interface(object):
@@ -34,9 +33,9 @@ class Interface(object):
             self.addresses = frozenset()
 
     def __repr__(self):
-        return '<Interface: %s veth=%s| %s>' % (
-            self.name, self.is_veth, (self.untagged, self.tagged,
-                                      self.addresses))
+        return '<Interface: %s veth=%s| untagged=%s tagged=%s addrs=%s>' % (
+            self.name, self.is_veth, self.untagged, self.tagged,
+            self.addresses)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -68,7 +67,7 @@ class Interface(object):
         except CalledProcessError:
             pass
 
-        logger.debug('[ip-%s] show: %s' % (self.name, str(retval)))
+        logger.debug('[ip-%s] show: %s', self.name, str(retval))
         return retval
 
     def delete_address(self, address):
@@ -88,8 +87,8 @@ class Interface(object):
         to_delete = list(set(old_addresses) - set(new_addresses))
         to_add = list(set(new_addresses) - set(old_addresses))
 
-        logger.debug('[ip-%s] delete: %s' % (self.name, str(to_delete)))
-        logger.debug('[ip-%s] add: %s' % (self.name, str(to_add)))
+        logger.debug('[ip-%s] delete: %s', self.name, str(to_delete))
+        logger.debug('[ip-%s] add: %s', self.name, str(to_add))
 
         for i in to_delete:
             self.delete_address(i)
@@ -118,6 +117,7 @@ class Switch(object):
         ovs = {}
         bridge = None
         port = None
+        # parse ovs-vsctl show
         for line in self._run('show').splitlines():
             t = line.split()
             if t[0] == 'Bridge':
@@ -155,7 +155,7 @@ class Switch(object):
                       'type', 'veth', 'peer', 'name', interface.name))
                 self._setns(interface.name)
         except:
-            pass
+            logger.exception('Unhandled exception: ')
         self._run(*params)
 
     def delete_port(self, interface):
@@ -179,8 +179,8 @@ class Switch(object):
         add = list(set(new_interfaces).difference(set(old_interfaces)))
         delete = list(set(old_interfaces).difference(set(new_interfaces)))
 
-        logger.debug('[ovs delete]: %s' % delete)
-        logger.debug('[ovs add]: %s' % add)
+        logger.debug('[ovs delete]: %s', delete)
+        logger.debug('[ovs add]: %s', add)
 
         for interface in delete:
             self.delete_port(interface)

@@ -12,7 +12,7 @@ class Interface(object):
         # {"interfaces": ["eth1"], "tag": 2, "trunks": [1, 2, 3],
         # "type": "internal", "addresses": ["193.006.003.130/24", "None"]}
         self.name = name
-        self.is_veth = data.get('type', 'external') == 'internal'
+        self.is_internal = data.get('type', 'external') == 'internal'
 
         try:
             self.tagged = frozenset(int(i) for i in data['trunks'])
@@ -35,7 +35,7 @@ class Interface(object):
 
     def __repr__(self):
         return '<Interface: %s veth=%s| untagged=%s tagged=%s addrs=%s>' % (
-            self.name, self.is_veth, self.untagged, self.tagged,
+            self.name, self.is_internal, self.untagged, self.tagged,
             self.addresses)
 
     def __eq__(self, other):
@@ -47,7 +47,7 @@ class Interface(object):
 
     @property
     def external_name(self):
-        if self.is_veth:
+        if self.is_internal:
             return '%s-EXT' % self.name
         else:
             return self.name
@@ -77,7 +77,7 @@ class Interface(object):
         self._run('add', str(address), 'dev', self.name)
 
     def up(self):
-        if self.is_veth:
+        if self.is_internal:
             ns_exec(('ip', 'link', 'set', 'up', self.name))
         sudo(('ip', 'link', 'set', 'up', self.external_name))
 
@@ -150,7 +150,7 @@ class Switch(object):
 
         # move interface into namespace
         try:
-            if interface.is_veth:
+            if interface.is_internal:
                 sudo(('ip', 'link', 'add', interface.external_name,
                       'type', 'veth', 'peer', 'name', interface.name))
                 self._setns(interface.name)
@@ -160,7 +160,7 @@ class Switch(object):
 
     def delete_port(self, interface):
         self._run('del-port', self.brname, interface.external_name)
-        if interface.is_veth:
+        if interface.is_internal:
             try:
                 sudo(('ip', 'link', 'del', interface.external_name))
             except CalledProcessError:
@@ -185,7 +185,7 @@ class Switch(object):
 
         for interface in new_interfaces:
             try:
-                if interface.is_veth or not HA:
+                if interface.is_internal or not HA:
                     interface.up()
             except CalledProcessError as e:
                 logger.warning(e)

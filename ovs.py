@@ -193,3 +193,81 @@ class Switch(object):
                 interface.migrate()
             except CalledProcessError as e:
                 logger.warning(e)
+
+
+class Bridge(Switch):
+    def __init__(self, brname):
+        self.brname = brname
+        self.brifnum = brname
+        try:
+            sudo(('brctl', 'addbr', brname))
+            sudo(('ip', 'link', 'set', 'up', brname))
+        except:
+            pass
+
+    def find_data(self, data, tok):
+        try:
+            masteridx = data.index(tok)
+            return tuple(data[masteridx + 1:])
+        except (ValueError, IndexError):
+            return (None, )
+
+    def parse_ip_link(self, data):
+        port = None
+        ports = {}
+
+        for line in data.splitlines():
+            t = line.split()
+            if line.startswith(' '):
+                vlan = self.find_data(t, '802.1Q')
+                if port in ports and vlan and vlan[0] == 'id':
+                    ports[port]['tag'] = vlan[1]
+            else:
+                port, sep, parent = t[1].rstrip(':').partition('@')
+                if self.find_data(t, 'master')[0] == self.brname:
+                    type = 'external'
+                elif (parent in (self.brname, self.brifnum) or
+                        port == self.brname):
+                    type = 'internal'
+                else:
+                    continue
+                ports[port] = {'type': type, 'ifnum': t[0].rstrip(':')}
+
+        return ports
+
+    def list_ports(self):
+        ports = self.parse_ip_link(sudo(('ip', '-d', 'link', 'show')))
+        brport = ports.pop(self.brname)
+        self.brifnum = 'if%s' % brport['ifnum']
+        ports.update(self.parse_ip_link(ns_exec(('ip', '-d', 'link', 'show'))))
+
+        return [Interface(name, data, with_show=True)
+                for name, data in ports.items()]
+
+    def delete_port(self, interface):
+        try:
+            if interface.is_internal:
+                ns_exec(('ip', 'link', 'del', interface.name))
+            else:
+                sudo(('brctl', 'delif', self.brname, interface.name))
+        except CalledProcessError:
+            pass
+
+    def add_port(self, interface):
+        try:
+            if interface.is_internal:
+                if not interface.untagged:
+                    return
+                sudo(('ip', 'link', 'add', 'link', self.brname, 'name',
+                      interface.name, 'type', 'vlan', 'id',
+                      str(interface.untagged)))
+                self._setns(interface.name)
+            else:
+                sudo(('brctl', 'addif', self.brname, interface.name))
+        except:
+            logger.exception('Unhandled exception: ')
+
+
+if __name__ == "__main__":
+    br = Bridge('br0')
+    print br.list_ports()

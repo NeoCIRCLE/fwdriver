@@ -4,7 +4,7 @@ import re
 import json
 import logging
 
-from ovs import Switch
+from ovs import Switch, Bridge
 from utils import (ns_exec, sudo, ADDRESSES,
                    dhcp_no_free_re, dhcp_ack_re)
 
@@ -24,6 +24,12 @@ celery.conf.update(CELERY_CACHE_BACKEND=CACHE_URI,
                    CELERY_RESULT_BACKEND='cache')
 
 logger = logging.getLogger(__name__)
+
+
+if getenv('BRIDGE_TYPE', 'OVS') == 'BRIDGE':
+    network_type = Bridge
+else:
+    network_type = Switch
 
 
 @task(name="firewall.reload_firewall")
@@ -52,7 +58,8 @@ def reload_firewall_vlan(data, save_config=True):
     if uplink:
         data[uplink] = {'interfaces': uplink}
 
-    br = Switch('firewall')
+    print network_type
+    br = network_type('firewall')
     br.migrate(data)
 
     if save_config:

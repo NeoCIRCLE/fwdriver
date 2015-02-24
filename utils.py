@@ -4,12 +4,12 @@ import logging
 import json
 import re
 
+
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 NETNS = getenv('NETNS', 'fw')
-MAC = getenv('MAC')
 ADDRESSES = json.loads(getenv('ADDRESSES', '{}'))
 HA = bool(getenv('HA', False))
 

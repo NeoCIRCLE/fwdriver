@@ -4,8 +4,7 @@ import re
 import json
 import logging
 
-from ovs import Switch, Bridge
-from utils import (ns_exec, sudo, ADDRESSES,
+from utils import (ns_exec, sudo, ADDRESSES, get_network_type,
                    dhcp_no_free_re, dhcp_ack_re)
 
 DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
@@ -26,12 +25,6 @@ celery.conf.update(CELERY_CACHE_BACKEND=CACHE_URI,
 logger = logging.getLogger(__name__)
 
 
-if getenv('BRIDGE_TYPE', 'OVS') == 'BRIDGE':
-    network_type = Bridge
-else:
-    network_type = Switch
-
-
 @task(name="firewall.reload_firewall")
 def reload_firewall(data4, data6, save_config=True):
     try:
@@ -50,6 +43,11 @@ def reload_firewall(data4, data6, save_config=True):
 
 @task(name="firewall.reload_firewall_vlan")
 def reload_firewall_vlan(data, save_config=True):
+    network_type = get_network_type()
+    if network_type is None:
+        logger.info("Ignored reload_firewall_vlan() network type=%s",
+                    network_type)
+        return
     # Add additional addresses from config
     for k, v in ADDRESSES.items():
         data[k]['addresses'] += v

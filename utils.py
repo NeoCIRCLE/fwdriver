@@ -13,6 +13,16 @@ MAC = getenv('MAC')
 ADDRESSES = json.loads(getenv('ADDRESSES', '{}'))
 HA = bool(getenv('HA', False))
 
+
+def get_network_type():
+    from ovs import Switch, Bridge
+    if getenv('BRIDGE_TYPE', 'OVS') == 'BRIDGE':
+        return Bridge
+    elif getenv('BRIDGE_TYPE', 'OVS') == 'NONE':
+        return None
+    else:
+        return Switch
+
 # 2013-06-26 12:16:59 DHCPACK on 10.4.0.14 to 5c:b5:24:e6:5c:81
 #      (android_b555bfdba7c837d) via vlan0004
 
@@ -45,5 +55,8 @@ def sudo(args, stdin=None):
 
 
 def ns_exec(args, stdin=None):
-    return sudo(('/sbin/ip', 'netns', 'exec',
-                NETNS) + args, stdin)
+    if get_network_type() is None:
+        return sudo(args, stdin)
+    else:
+        return sudo(('/sbin/ip', 'netns', 'exec',
+                    NETNS) + args, stdin)

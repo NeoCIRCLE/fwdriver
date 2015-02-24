@@ -126,7 +126,7 @@ class Switch(object):
             elif t[0] == 'Port':
                 port = t[1].replace('"', '')  # valahol idezojel van
                 if port.endswith('-EXT'):
-                    port = port.rstrip('-EXT')
+                    port = port.rsplit('-EXT')[0]
                     type = 'internal'
                 else:
                     type = 'external'

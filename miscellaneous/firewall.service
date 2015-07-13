@@ -1,0 +1,18 @@
+[Unit]
+Description=CIRCLE firewall
+After=network.target
+After=firewall-init.service
+
+[Service]
+User=fw
+Group=fw
+WorkingDirectory=/home/fw/fwdriver
+
+ExecStart=/bin/bash -c "cd /home/fw/fwdriver ; . /home/fw/.virtualenvs/fw/bin/postactivate; . /home/fw/.virtualenvs/fw/bin/activate; HOSTNAME=$(hostname -s); exec celeryd -A fw -Q ${HOSTNAME}.firewall --loglevel=info -c 1"
+#ExecStartPost=/bin/systemclt restart dhcpd
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

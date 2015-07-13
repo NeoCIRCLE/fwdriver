@@ -77,7 +77,11 @@ def reload_firewall_vlan(data, save_config=True):
 def reload_dhcp(data):
     with open('/etc/dhcp/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
-    sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
+
+    if platform.dist()[0]=="centos":
+        sudo(('/bin/systemctl', 'restart','dhcpd'))
+    else:
+        sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
     logger.info("DHCP configuration is reloaded.")
 
 

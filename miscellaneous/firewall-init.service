@@ -1,0 +1,16 @@
+[Unit]
+Description=CIRCLE firewall
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/home/fw/fwdriver
+
+ExecStart=/bin/bash -c "/etc/init.d/openvswitch restart ; /sbin/ip netns add fw || true; ovs-vsctl del-br firewall || true; /sbin/ip netns exec fw sysctl -f /etc/sysctl.d/60-circle-firewall.conf; /sbin/ip netns exec fw ip link set lo up;"
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

@@ -77,7 +77,7 @@ def reload_firewall_vlan(data, save_config=True):
 def reload_dhcp(data):
     with open('/etc/dhcp/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
-
+    import platform
     if platform.dist()[0]=="centos":
         sudo(('/bin/systemctl', 'restart','dhcpd'))
     else:

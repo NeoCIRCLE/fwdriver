@@ -1,3 +1,4 @@
+import os
 from os import getenv
 import subprocess as sp
 import logging
@@ -60,3 +61,17 @@ def ns_exec(args, stdin=None):
     else:
         return sudo(('/sbin/ip', 'netns', 'exec',
                     NETNS) + args, stdin)
+
+
+def is_there_systemd():
+
+    devnull=open(os.devnull,"w")
+
+    try:
+        sp.call(["/bin/systemctl","--version"],stdout=devnull,stderr=devnull)
+    except OSError:
+        devnull.close()
+        return False
+    devnull.close()
+    return True
+

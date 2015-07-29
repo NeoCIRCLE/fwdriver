@@ -65,13 +65,11 @@ def ns_exec(args, stdin=None):
 
 def is_there_systemd():
 
-    devnull = open(os.devnull, "w")
+    with open(os.devnull, "w") as devnull:
 
-    try:
-        sp.call(["/bin/systemctl", "--version"], stdout=devnull, stderr=devnull)
-    except OSError:
-        return False
-    finally:
-        devnull.close()
+        try:
+            sp.call(["/bin/systemctl", "--version"], stdout=devnull, stderr=devnull)
+        except OSError:
+            return False
 
     return True

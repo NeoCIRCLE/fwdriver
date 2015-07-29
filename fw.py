@@ -77,9 +77,9 @@ def reload_firewall_vlan(data, save_config=True):
 def reload_dhcp(data):
     with open('/etc/dhcp/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
-    
+
     if is_there_systemd():
-        sudo(('/bin/systemctl', 'restart','dhcpd'))
+        sudo(('/bin/systemctl', 'restart', 'dhcpd'))
     else:
         sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
     logger.info("DHCP configuration is reloaded.")

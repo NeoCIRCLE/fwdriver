@@ -5,7 +5,7 @@ import json
 import logging
 
 from utils import (ns_exec, sudo, ADDRESSES, get_network_type,
-                   dhcp_no_free_re, dhcp_ack_re)
+                   dhcp_no_free_re, dhcp_ack_re, is_there_systemd)
 
 DHCP_LOGFILE = getenv('DHCP_LOGFILE', '/var/log/syslog')
 VLAN_CONF = getenv('VLAN_CONF', 'vlan.conf')
@@ -77,7 +77,11 @@ def reload_firewall_vlan(data, save_config=True):
 def reload_dhcp(data):
     with open('/etc/dhcp/dhcpd.conf.generated', 'w') as f:
         f.write("\n".join(data) + "\n")
-    sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
+
+    if is_there_systemd():
+        sudo(('/bin/systemctl', 'restart', 'dhcpd'))
+    else:
+        sudo(('/etc/init.d/isc-dhcp-server', 'restart'))
     logger.info("DHCP configuration is reloaded.")
 
 

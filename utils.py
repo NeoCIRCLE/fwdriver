@@ -1,3 +1,4 @@
+import os
 from os import getenv
 import subprocess as sp
 import logging
@@ -60,3 +61,8 @@ def ns_exec(args, stdin=None):
     else:
         return sudo(('/sbin/ip', 'netns', 'exec',
                     NETNS) + args, stdin)
+
+
+def is_there_systemd():
+
+    return os.path.isfile("/bin/systemctl")

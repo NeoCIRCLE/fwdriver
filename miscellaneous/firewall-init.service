@@ -1,0 +1,15 @@
+[Unit]
+Description=CIRCLE firewall init
+After=network.target
+#Before=firewall.service
+
+[Service]
+User=root
+Group=root
+
+Type=oneshot
+ExecStart=/bin/bash -c "/bin/systemctl restart openvswitch ; /sbin/ip netns add fw || true; ovs-vsctl del-br firewall || true; /sbin/ip netns exec fw sysctl -f /etc/sysctl.d/60-circle-firewall.conf ; /sbin/ip netns exec fw ip link set lo up"
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,7 +1,6 @@
 [Unit]
 Description=CIRCLE firewall init
 After=network.target
-#Before=firewall.service
 
 [Service]
 User=root
